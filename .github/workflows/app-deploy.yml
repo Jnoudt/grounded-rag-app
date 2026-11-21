@@ -1,0 +1,119 @@
+name: App quality, test, and deployment
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  PYTHON_VERSION: "3.12"
+  NODE_VERSION: "20"
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: Install Python quality dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt
+          pip install -r requirements-sec.txt
+
+      - name: Python lint and type check
+        run: |
+          ruff check src function_app.py tests
+          mypy src function_app.py
+
+      - name: Python tests
+        run: pytest
+
+      - name: Security checks
+        run: |
+          bandit -q -r src function_app.py
+          pip-audit -r requirements.txt
+
+      - name: Install frontend dependencies
+        run: npm install
+        working-directory: frontend
+
+      - name: Frontend lint
+        run: npm run lint
+        working-directory: frontend
+
+      - name: Frontend build
+        run: npm run build
+        working-directory: frontend
+
+      - name: Frontend dependency audit
+        run: npm run audit
+        working-directory: frontend
+
+      - name: Write quality summary
+        if: always()
+        shell: bash
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          ## Development verification
+
+          - Commit: `${{ github.sha }}`
+          - Event: `${{ github.event_name }}`
+          - Ref: `${{ github.ref }}`
+          - Repository: `${{ github.repository }}`
+          - Quality job status: `${{ job.status }}`
+
+          Review failed step annotations, rerun individual checks locally with
+          `pytest`, `ruff`, `mypy`, `bandit`, `pip-audit`, and the frontend
+          `lint/build/audit` commands before pushing a fix.
+          EOF
+
+      - name: Upload frontend build
+        uses: actions/upload-artifact@v4
+        with:
+          name: grounded-rag-console
+          path: frontend/dist
+
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' && vars.AZURE_FUNCTIONAPP_NAME != ''
+    needs: quality
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Build Azure Functions package
+        run: |
+          python -m pip install --target .python_packages/lib/site-packages -r requirements.txt
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm install
+          npm run build
+      - uses: azure/functions-action@v1
+        with:
+          app-name: ${{ vars.AZURE_FUNCTIONAPP_NAME }}
+          package: .
+          scm-do-build-during-deployment: true

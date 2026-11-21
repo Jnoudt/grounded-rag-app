@@ -1,0 +1,26 @@
+[
+  {
+    "id": "identity-policy",
+    "query": "How does the RAG system access Azure resources?",
+    "expected_chunk_ids": ["portfolio-security-policy_p1_c2"],
+    "expected_abstention": false
+  },
+  {
+    "id": "retention",
+    "query": "What is the Application Insights log retention?",
+    "expected_chunk_ids": ["infrastructure-retention-guide_p1_c1"],
+    "expected_abstention": false
+  },
+  {
+    "id": "injection-boundary",
+    "query": "How should retrieved document text be handled?",
+    "expected_chunk_ids": ["retrieval-operations-manual_p1_c1"],
+    "expected_abstention": false
+  },
+  {
+    "id": "out-of-scope",
+    "query": "What is the price of lunar cheese futures?",
+    "expected_chunk_ids": [],
+    "expected_abstention": true
+  }
+]
